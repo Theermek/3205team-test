@@ -48,21 +48,12 @@ export class OrdersService {
   /**
    * Применяет версию заказа (из синка или вебхука).
    * Вебхуки приходят с повторами и не по порядку, поэтому версию сохраняем,
-   * только если она новее уже сохранённой (по updatedAt).
+   * только если она новее уже сохранённой (по updatedAt). Сравнение — атомарно в БД:
+   * разные версии одного заказа приходят одновременно.
    * Исключение — та же версия, сохранённая до появления amountPaid: дозаполняем,
    * иначе повторный синк не добавит скидки к уже загруженным заказам.
    */
   async apply(raw: unknown): Promise<ApplyResult> {
-    const incoming = this.normalize(raw);
-    const current = await this.orders.get(incoming.id);
-    if (current && current.updatedAt.getTime() >= incoming.updatedAt.getTime()) {
-      const backfill =
-        current.updatedAt.getTime() === incoming.updatedAt.getTime() && current.amountPaidKop === null && incoming.amountPaidKop !== null;
-      if (!backfill) return "stale";
-      await this.orders.save(incoming);
-      return "updated";
-    }
-    await this.orders.save(incoming);
-    return current ? "updated" : "created";
+    return this.orders.saveIfNewer(this.normalize(raw));
   }
 }

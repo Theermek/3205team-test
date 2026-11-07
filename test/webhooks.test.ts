@@ -24,6 +24,19 @@ describe("POST /webhooks/order", () => {
     expect(rows[0].status).toBe("refunded");
   });
 
+  it("параллельные версии одного заказа: остаётся самая новая", async () => {
+    // Внешняя система шлёт повторы разных версий пачкой, в пределах миллисекунды
+    const orders = Array.from({ length: 20 }, () => apiOrder({ status: "paid", updatedAt: "2026-02-10T12:00:00Z" }));
+    await Promise.all(
+      orders.flatMap((o) => {
+        const fresh = { ...o, status: "refunded", updatedAt: "2026-02-10T13:00:00Z" };
+        return [fresh, o, fresh, o, o].map((v) => postWebhook(ctx.app, v));
+      }),
+    );
+    const { rows } = await ctx.db.query(`SELECT status, count(*)::int AS n FROM orders GROUP BY status`);
+    expect(rows).toEqual([{ status: "refunded", n: 20 }]);
+  });
+
   it("новое событие обновляет заказ", async () => {
     const o = apiOrder({ status: "pending" });
     await postWebhook(ctx.app, o);
