@@ -31,6 +31,23 @@ describe("POST /webhooks/order", () => {
     expect(res.json()).toEqual({ result: "updated" });
   });
 
+  it("сохраняет amountPaid; без него — NULL", async () => {
+    const withDiscount = apiOrder({ amount: "2500.00", discountPercent: "16.5", amountPaid: "2087.50" });
+    const legacy = apiOrder({ amount: 1000 });
+    await postWebhook(ctx.app, withDiscount);
+    await postWebhook(ctx.app, legacy);
+    const { rows } = await ctx.db.query(`SELECT id, amount_kop, amount_paid_kop FROM orders ORDER BY id`);
+    const byId = Object.fromEntries(rows.map((r) => [r.id, [Number(r.amount_kop), r.amount_paid_kop === null ? null : Number(r.amount_paid_kop)]]));
+    expect(byId[withDiscount.id]).toEqual([250000, 208750]);
+    expect(byId[legacy.id]).toEqual([100000, null]);
+  });
+
+  it("amountPaid больше amount или мусор — 400", async () => {
+    expect((await postWebhook(ctx.app, apiOrder({ amount: 1000, amountPaid: 1000.01 }))).statusCode).toBe(400);
+    expect((await postWebhook(ctx.app, apiOrder({ amount: 1000, amountPaid: "abc" }))).statusCode).toBe(400);
+    expect((await postWebhook(ctx.app, apiOrder({ amount: 1000, amountPaid: -1 }))).statusCode).toBe(400);
+  });
+
   it("невалидное тело — 400", async () => {
     const res = await postWebhook(ctx.app, { id: "x" });
     expect(res.statusCode).toBe(400);

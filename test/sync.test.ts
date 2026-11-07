@@ -34,6 +34,24 @@ describe("POST /sync", () => {
     expect(rows[0].status).toBe("refunded");
   });
 
+  it("дозаполняет amountPaid у заказов, загруженных до появления скидок", async () => {
+    const o = apiOrder({ amount: 2500 });
+    await ctx.app.inject({ method: "POST", url: "/webhooks/order", payload: o }); // старый формат → amount_paid_kop NULL
+    ctx.api.pages.set(null, { items: [{ ...o, discountPercent: 16.5, amountPaid: 2087.5 }], nextCursor: null });
+
+    const res = await ctx.app.inject({ method: "POST", url: "/sync" });
+    expect(res.json()).toMatchObject({ applied: 1, stale: 0 });
+    const { rows } = await ctx.db.query(`SELECT amount_paid_kop FROM orders WHERE id = $1`, [o.id]);
+    expect(Number(rows[0].amount_paid_kop)).toBe(208750);
+  });
+
+  it("повтор той же версии с amountPaid — stale", async () => {
+    const o = apiOrder({ amount: 2500, discountPercent: 16.5, amountPaid: 2087.5 });
+    ctx.api.pages.set(null, { items: [o, o], nextCursor: null });
+    const res = await ctx.app.inject({ method: "POST", url: "/sync" });
+    expect(res.json()).toMatchObject({ applied: 1, stale: 1 });
+  });
+
   it("строковые суммы и даты без зоны", async () => {
     const o = apiOrder({ amount: "2500.00", createdAt: "2026-02-10T21:30:00" });
     ctx.api.pages.set(null, { items: [o], nextCursor: null });
