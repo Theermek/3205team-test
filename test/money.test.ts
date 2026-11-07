@@ -25,6 +25,19 @@ describe("toKop / fromKop", () => {
     expect(toKop(10.999)).toBe(1099);
   });
 
+  it("не теряет копейку на неточных float", () => {
+    expect(toKop(0.29)).toBe(29);
+    expect(toKop(1.15)).toBe(115);
+    expect(toKop(4184.6)).toBe(418460);
+    expect(toKop(2087.5)).toBe(208750);
+  });
+
+  it("любая сумма с копейками переводится точно", () => {
+    for (let kop = 0; kop <= 1_000_000; kop++) {
+      if (toKop(kop / 100) !== kop) throw new Error(`toKop(${kop / 100}) !== ${kop}`);
+    }
+  });
+
   it("копейки в рубли", () => {
     expect(fromKop(250000)).toBe(2500);
     expect(fromKop(1099)).toBe(10.99);
